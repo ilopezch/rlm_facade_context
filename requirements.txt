@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+httpx
+git+https://github.com/alexzhang13/rlm.git
+tiktoken
