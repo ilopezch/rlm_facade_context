@@ -27,9 +27,16 @@ SERVER_PORT        = 8081
 SERVER_HOST        = "0.0.0.0"
 LOG_LEVEL          = "INFO"
 TOKEN_LIMIT        = 98_304
-COMPRESS_THRESHOLD = 72_000
+COMPRESS_THRESHOLD = 50_000
 CHECKPOINT_DIR     = Path(".facade_anthropic_checkpoints")
 CHECKPOINT_DIR.mkdir(exist_ok=True)
+
+DISALLOWED_TOOLS = {
+    "Agent", "TaskCreate", "TaskGet", "TaskList", "TaskOutput",
+    "TaskStop", "TaskUpdate", "CronCreate", "CronDelete", "CronList",
+    "ScheduleWakeup", "NotebookEdit", "EnterWorktree", "ExitWorktree",
+    "WebSearch", "WebFetch"
+}
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
@@ -46,8 +53,8 @@ rlm = RLM(
         "model_name":  "local",
         "base_url":    LLAMA_BASE_URL + "/v1",
         "api_key":     "local",
-        "max_tokens":  16384,
     },
+    max_tokens=32768,
 )
 
 
@@ -85,7 +92,7 @@ def compress_via_rlm(messages: list[dict]) -> list[dict]:
     )
     summary = rlm.completion(
         "Summarise this conversation preserving all file names, class names, "
-        f"decisions and technical details:\n\n{history}"
+        f"decisions and technical details:\n\n{history}",
     ).response.strip()
 
     reduced = system_msgs + [
@@ -425,6 +432,13 @@ async def create_message(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Filter disallowed tools from request
+    if "tools" in body:
+        body["tools"] = [
+            t for t in body["tools"]
+            if t.get("name") not in DISALLOWED_TOOLS
+        ]
+
     requested_model = body.get("model", "claude-sonnet-4.6")
     stream          = body.get("stream", False)
     temperature     = body.get("temperature", 0.2)
@@ -543,5 +557,5 @@ if __name__ == "__main__":
     log.info("Facade → llama-server: %s", LLAMA_BASE_URL)
     log.info("Listening on port %d", SERVER_PORT)
     log.info("Launch Claude Code with:")
-    log.info("  ANTHROPIC_BASE_URL=http://localhost:%d ANTHROPIC_API_KEY=sk-local claude", SERVER_PORT)
+    log.info("  ANTHROPIC_BASE_URL=http://flc-box:%d ANTHROPIC_API_KEY=sk-local claude", SERVER_PORT)
     uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT, log_level=LOG_LEVEL.lower())
